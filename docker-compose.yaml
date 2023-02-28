@@ -1,0 +1,105 @@
+version: '3.8'
+services:
+
+  scheduler:
+    build:
+      context: .
+      target: scheduler
+    ports:
+      - "8888:8888"
+    depends_on:
+      - broker
+      - redis-node-0
+      - redis-node-1
+      - redis-node-2
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://scheduler:8888/healthy" ]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  generator:
+    build:
+      context: .
+      target: generator
+    depends_on:
+      scheduler:
+        condition: service_healthy
+
+  consumer:
+    build:
+      context: .
+      target: consumer
+    depends_on:
+      scheduler:
+        condition: service_healthy
+
+  redis-node-0:
+    image: docker.io/bitnami/redis-cluster:7.0.5
+    volumes:
+      - redis-cluster-data-0:/bitnami/redis/data
+    ports:
+      - "6379:6379"
+    environment:
+      - 'ALLOW_EMPTY_PASSWORD=yes'
+      - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2'
+      - 'REDIS_TLS_AUTH_CLIENTS=no'
+
+  redis-node-1:
+    image: docker.io/bitnami/redis-cluster:7.0.5
+    volumes:
+      - redis-cluster-data-1:/bitnami/redis/data
+    ports:
+      - "6380:6379"
+    environment:
+      - 'ALLOW_EMPTY_PASSWORD=yes'
+      - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2'
+      - 'REDIS_TLS_AUTH_CLIENTS=no'
+
+  redis-node-2:
+    image: docker.io/bitnami/redis-cluster:7.0.5
+    volumes:
+      - redis-cluster-data-2:/bitnami/redis/data
+    ports:
+      - "6381:6379"
+    environment:
+      - 'ALLOW_EMPTY_PASSWORD=yes'
+      - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2'
+      - 'REDIS_CLUSTER_CREATOR=yes'
+      - 'REDIS_CLUSTER_REPLICAS=0'
+      - 'REDIS_TLS_AUTH_CLIENTS=no'
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.0.1
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  broker:
+    image: confluentinc/cp-kafka:7.0.1
+    container_name: broker
+    ports:
+      # To learn about configuring Kafka for access across networks see
+      # https://www.confluent.io/blog/kafka-client-cannot-connect-to-broker-on-aws-on-docker-etc/
+      - "9092:9092"
+      - "29092:29092"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092,PLAINTEXT_INTERNAL://broker:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+volumes:
+  redis-cluster-data-0:
+    driver: local
+  redis-cluster-data-1:
+    driver: local
+  redis-cluster-data-2:
+    driver: local
