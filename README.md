@@ -41,37 +41,42 @@ on production.
 
 ## Consumer
 Represents a dummy service that needs to be notified when the ticks are due, so this service subscribes to `tick` topic
-and should execute business/domain logic when the events are received. This can be used to receive clocks ticks in an
-state machine model, where the clock is represented as a tick event.
+and should execute business/domain logic when the events are received. 
+
+This can be used to receive clocks ticks in a state machine model, where the clock is represented as a tick event.
 
 ## Generator
 Is a load generator, creates a list of 1.000.000 different IDs and stress/tests the API, creating random ticks
 with random ids from the generated list and scheduling with a random time in the future within 10 minutes.
 
+The only parameter available to control the load test is the number of routines, defined in cmd/generator/main.go
 
-## understanding the output:
 
+## Understanding the output/Resuls:
+when running docker compose up, the following output will be generated
 ```
 docker host                           | Date               | Log message
-distributed-scheduler-scheduler-1     | 2023/03/01 02:07:46 Scheduled items/s: 7941
-distributed-scheduler-consumer-1      | 2023/03/01 02:07:46 Consumed items/s: 15573
-distributed-scheduler-generator-1     | 2023/03/01 02:07:47 Generated ticks/s: 16073
-distributed-scheduler-scheduler-2     | 2023/03/01 02:07:45 Scheduled items/s: 7753
+distributed-scheduler-generator-1     | 2023/03/01 02:26:40 Generated ticks/s: 32321
+distributed-scheduler-scheduler-1     | 2023/03/01 02:26:36 Scheduled items/s: 17507
+distributed-scheduler-consumer-1      | 2023/03/01 02:26:40 Consumed items/s: 27525
+distributed-scheduler-scheduler-2     | 2023/03/01 02:26:38 Scheduled items/s: 15563
+
 ```
 
 * Generated items/s: number of http messages sent by the generator container
+* Scheduled items/s: number of ticks with due date that have been pushed to `tick` topic. 
 * Consumed items/s number of kafka messages consumed on the `tick` topic
-* Scheduled items/s: number of ticks with expired date that have been pushed to `tick` topic.
+
 
 In the sample scenario pasted above,
-The generator is producing 15.5K rest requests per second.
-The scheduler is "bridging" between redis and kafka 15.6K messages per second
-The consumer kafka subscription is processing 16K  messages per second.
+The generator is producing 32.3K rest requests per second.
+The scheduler is "bridging" between redis and kafka 33K messages per second (scheduler 1 + 2)
+The consumer kafka subscription is processing 27K  messages per second.
 
 The numbers between the different stages should be similar, but not exactly the same as the messages are scheduled
 in the future with some random delay + the fact that it's an async process.
 
-a very high level overview of the system resources while running the PoC:
+a very high level overview of the system resources while running the PoC (Gen 1 Threadripper):
 ```
 PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND                                                                                                                                                                                                                                                                                                                                                                                                                                                  
 20   0 7328392 305760  13676 S 409.6   0.5   6:55.22 scheduler                                                                                                                                                                                                                                                                                                                                                                                                                                                

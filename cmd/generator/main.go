@@ -17,7 +17,7 @@ import (
 
 const nClients = 1000 * 1000
 const httpAPIURl = "http://scheduler:8888/tick"
-const nWorkers = 100
+const nWorkers = 200
 
 var ticksGenerated = atomic.Int32{}
 
