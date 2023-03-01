@@ -105,8 +105,10 @@ func (c *TickConsumer) processKafkaMessage(ctx context.Context, ev kafka.Event) 
 		c.processor(ctx, tick)
 	case kafka.Error:
 		return e
+	case kafka.OffsetsCommitted:
+		//log.Println("offsets committed")
 	default:
-		log.Printf("recevived a kafka event of unknown type %v\n", e)
+		log.Printf("recevived a kafka event of unknown type: %v\n", e)
 	}
 	return nil
 }

@@ -1,6 +1,6 @@
 .PHONY: start-poc
 start-poc:
-	@docker compose up -d
+	@docker compose up --build
 
 .PHONY: cleanup-poc
 cleanup-poc:

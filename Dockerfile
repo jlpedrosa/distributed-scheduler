@@ -11,7 +11,6 @@ RUN go build -o . ./cmd/...
 
 
 FROM golang:1.20.1 as scheduler
-
 EXPOSE 8888/tcp
 WORKDIR /app
 COPY --from=builder /src/scheduler /app
@@ -26,4 +25,4 @@ CMD ["/app/generator"]
 FROM golang:1.20.1 as consumer
 WORKDIR /app
 COPY --from=builder /src/consumer /app/
-CMD ["/app/generator"]
+CMD ["/app/consumer"]

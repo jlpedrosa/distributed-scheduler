@@ -17,6 +17,7 @@ import (
 )
 
 const setName = "scheditems"
+const setCount = 10
 const topicName = "ticks"
 const nPartitions = int32(32)
 const broker = "broker:9092"
@@ -28,8 +29,6 @@ func main() {
 	ctx, cancelFn := context.WithCancel(ctx)
 	signalChan := make(chan os.Signal, 10)
 	signal.Notify(signalChan, os.Kill, os.Interrupt)
-
-	hostname, _ := os.Hostname()
 
 	go func() {
 		select {
@@ -59,55 +58,62 @@ func main() {
 		log.Printf("Unable to create topic %q\n", err)
 	}
 
-	// create a kafka producer, using the official driver
-	producer, err := kafka.NewProducer(&kafka.ConfigMap{
-		"bootstrap.servers": broker,
-		"client.id":         hostname,
-		"acks":              "all",
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	kafkaProducer := ticker.NewKafkaProducer(producer, topicName, nPartitions)
-	scheduler := ticker.NewTickScheduler(redisClient, setName)
+	scheduler := ticker.NewTickScheduler(redisClient, setName, setCount)
 	controller := ticker.NewTickController(scheduler)
 
-	// Start in another go routine ""thread"" the consumption from ticks from redis
+	// Start in another go routines ""thread"" the consumption from ticks from redis
 	// and pushing them to kafka as their scheduled date happens
 	go func() {
-		redisKafkaBridge(ctx, kafkaProducer, scheduler)
+		redisKafkaBridge(ctx, scheduler)
 	}()
 
-	httpEngine := gin.Default()
+	httpEngine := gin.New()
+	httpEngine.Use(gin.Recovery())
 	controller.ConfigureEngine(httpEngine)
 	httpEngine.Run("0.0.0.0:8888")
 }
 
-func redisKafkaBridge(ctx context.Context, kafkaProducer *ticker.KafkaProducer, scheduler *ticker.TickScheduler) {
+func redisKafkaBridge(ctx context.Context, scheduler *ticker.TickScheduler) {
+	hostname, _ := os.Hostname()
+
 	ticksToFanOut := make(chan ticker.TickDTO, 10000)
 	doneChan := ctx.Done()
-	go func() {
-		for {
-			if err := scheduler.ConsumeTicks(ctx, ticksToFanOut); err != nil {
-				fmt.Printf("%s error consumung ticks from redis", err)
-			}
+
+	nProducers := 10
+	kafkaProducers := make([]*ticker.KafkaProducer, 0, nProducers)
+	for i := 0; i < nProducers; i++ {
+		// create a kafka producer, using the official driver
+		producer, err := kafka.NewProducer(&kafka.ConfigMap{
+			"bootstrap.servers": broker,
+			"client.id":         hostname,
+			"acks":              "all",
+		})
+		if err != nil {
+			panic(err)
 		}
+		kafkaProducers = append(kafkaProducers, ticker.NewKafkaProducer(producer, topicName, nPartitions))
+	}
+
+	go func() {
+		scheduler.ConsumeTicks(ctx, ticksToFanOut)
 		close(ticksToFanOut)
 	}()
 
+	i := 0
 	for {
+
 		select {
 		case tickDTO, found := <-ticksToFanOut:
 			if !found {
 				//channel closed, we must return exit
 				return
 				fmt.Printf("no more messages, existing")
-
 			}
+
+			kafkaProducer := kafkaProducers[i%nProducers]
 			//fmt.Printf("scheduled tick found, forwarding to kafka %+v", tickDTO)
 			if err := kafkaProducer.SendTick(ctx, tickDTO); err != nil {
-				fmt.Printf("error fanning out tick: %v", err)
+				fmt.Printf("error bridging to kafka: %v", err)
 			}
 		case <-doneChan:
 			return

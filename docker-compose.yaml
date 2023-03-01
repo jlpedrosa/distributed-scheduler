@@ -1,12 +1,12 @@
 version: '3.8'
 services:
-
   scheduler:
     build:
       context: .
       target: scheduler
-    ports:
-      - "8888:8888"
+    deploy:
+      replicas: 2
+
     depends_on:
       - broker
       - redis-node-0
@@ -14,10 +14,10 @@ services:
       - redis-node-2
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://scheduler:8888/healthy" ]
-      interval: 1m30s
-      timeout: 10s
+      interval: 5s
+      timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 5s
 
   generator:
     build:
@@ -26,6 +26,8 @@ services:
     depends_on:
       scheduler:
         condition: service_healthy
+      consumer:
+        condition: service_started
 
   consumer:
     build:

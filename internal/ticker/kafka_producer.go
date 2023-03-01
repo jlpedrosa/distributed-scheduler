@@ -15,11 +15,16 @@ type KafkaProducer struct {
 }
 
 func NewKafkaProducer(producer *kafka.Producer, topic string, partitions int32) *KafkaProducer {
-	return &KafkaProducer{
+	kProducer := &KafkaProducer{
 		producer:   producer,
 		topic:      topic,
 		partitions: partitions,
 	}
+	go func() {
+		kProducer.DumpEvents()
+	}()
+
+	return kProducer
 }
 
 func (kp *KafkaProducer) SendTick(ctx context.Context, tick TickDTO) error {
@@ -41,6 +46,23 @@ func (kp *KafkaProducer) SendTick(ctx context.Context, tick TickDTO) error {
 	}
 
 	return nil
+}
+
+func (kp *KafkaProducer) DumpEvents() {
+	eventsChan := kp.producer.Events()
+
+	for {
+		select {
+		case ev, found := <-eventsChan:
+			if !found {
+				fmt.Printf("event channels seems closed\n")
+			}
+			switch ev.(type) {
+			default:
+				fmt.Printf("event received: %+v", ev)
+			}
+		}
+	}
 }
 
 func (kp *KafkaProducer) tickToPartition(tick TickDTO) int32 {

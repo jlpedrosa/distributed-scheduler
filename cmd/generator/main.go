@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +17,9 @@ import (
 
 const nClients = 1000 * 1000
 const httpAPIURl = "http://scheduler:8888/tick"
+const nWorkers = 100
+
+var ticksGenerated = atomic.Int32{}
 
 func main() {
 
@@ -24,40 +29,90 @@ func main() {
 		clients = append(clients, uuid.NewString())
 	}
 
-	generator := loadGenerator{clients: clients}
-	generator.GenerateLoad()
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			MaxIdleConns:          100,
+			MaxConnsPerHost:       100,
+			MaxIdleConnsPerHost:   100,
+			IdleConnTimeout:       0,
+			ResponseHeaderTimeout: 15 * time.Second,
+			DisableKeepAlives:     false,
+			ForceAttemptHTTP2:     true,
+			DisableCompression:    true,
+		},
+	}
+
+	// launch a few "go routines" "threads" to launch requests
+	for i := 0; i < nWorkers; i++ {
+		generator := loadGenerator{clients: clients, httpClient: httpClient}
+		go func() {
+			generator.GenerateLoad()
+		}()
+	}
+
+	// add some stats on the console.
+	go func() {
+		for {
+			log.Printf("Generated ticks/s: %+v\n", ticksGenerated.Swap(0))
+			time.Sleep(time.Second)
+		}
+	}()
+
+	time.Sleep(60 * time.Minute)
 }
 
 type loadGenerator struct {
-	clients []string
+	clients    []string
+	httpClient *http.Client
 }
 
 func (l *loadGenerator) GenerateLoad() {
 	for {
 		ticker := l.fakeTicker()
 		l.CreateTick(ticker)
-		time.Sleep(time.Second)
+		ticksGenerated.Add(1)
+		time.Sleep(time.Millisecond * 5)
 	}
 }
 
 func (l *loadGenerator) CreateTick(tick ticker.TickDTO) {
 	buffer, err := json.Marshal(tick)
 	if err != nil {
-		log.Fatalf("error marshalling ticker %v", err)
+		log.Printf("error marshalling ticker %v", err)
+		return
 	}
-	_, err = http.Post(httpAPIURl, "application/json", bytes.NewReader(buffer))
+
+	req, err := http.NewRequest(http.MethodPost, httpAPIURl, io.NopCloser(bytes.NewReader(buffer)))
 	if err != nil {
-		log.Fatalf("error sending request %v", err)
+		log.Printf("error generating request %v", err)
+		return
 	}
+
+	resp, err := l.httpClient.Do(req)
+	if resp != nil {
+		_, err = io.Copy(io.Discard, resp.Body)
+		if err != nil {
+			log.Printf("error reading body %v", err)
+		}
+		if err = resp.Body.Close(); err != nil {
+			log.Printf("error closing body %v", err)
+		}
+	}
+
+	if err != nil {
+		log.Printf("error sending request %v", err)
+		time.Sleep(2 * time.Second)
+	}
+
 }
 
 // fakeTicker creates a new ticker (simulating some API)
 func (l *loadGenerator) fakeTicker() ticker.TickDTO {
 	chosenOne := l.clients[rand.Intn(len(l.clients))]
-	futureTime := time.Duration(rand.Intn(600)) * time.Second
+	futureTime := time.Duration(rand.Intn(60)) * time.Second
 	return ticker.TickDTO{
 		Item: chosenOne,
 		At:   time.Now().Add(futureTime),
 	}
-
 }
