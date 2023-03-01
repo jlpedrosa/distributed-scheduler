@@ -5,7 +5,15 @@ A distributed scheduler based on redis, uses multiple sorted sets using time as 
 are due and needs to be scheduled. All solution is based on golang.
 
 ## Running it
-The PoC can be run by using docker compose: `docker compose up --build`
+The PoC can be run by using docker compose: `docker compose up --build` additionaly there are helper make targets
+```
+start-poc:
+	@docker compose up --build
+
+cleanup-poc:
+	@docker compose down  --rmi local --volumes
+```
+
 
 ## Contaiers
 ### API/Scheduler
